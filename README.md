@@ -14,3 +14,16 @@ Don't be evil with this. I created this tool to learn. I'm not responsible if th
 ## Negatives(?)
 - Moneta (and probably other stuff) catches this (alerts on Modified Code in NTDLL).
 - That's all it does.
+
+## Credits
+MDSec - Bypassing User-Mode Hooks and Direct Invocation of System Calls for Red Teams
+https://www.mdsec.co.uk/2020/12/bypassing-user-mode-hooks-and-direct-invocation-of-system-calls-for-red-teams/
+
+Marcus Hutchins - An Introduction to Bypassing User Mode EDR Hooks
+https://malwaretech.com/2023/12/an-introduction-to-bypassing-user-mode-edr-hooks.html
+
+passthehashbrwn - Hiding Your Syscalls
+https://passthehashbrowns.github.io/hiding-your-syscalls
+
+jstigerwalt - Bypassing ETW For Fun and Profit
+https://whiteknightlabs.com/2021/12/11/bypassing-etw-for-fun-and-profit/
