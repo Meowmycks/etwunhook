@@ -13,7 +13,7 @@ Don't be evil with this. I created this tool to learn. I'm not responsible if th
 
 ## Negatives(?)
 - Moneta (and probably other stuff) catches this (alerts on Modified Code in NTDLL).
-- That's all it does.
+- ~~That's all it does.~~ (I lied. This can be modified to use *any* code to repatch *any* Nt* function.)
 
 ## Credits
 MDSec - Bypassing User-Mode Hooks and Direct Invocation of System Calls for Red Teams
